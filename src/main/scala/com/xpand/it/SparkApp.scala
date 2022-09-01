@@ -21,5 +21,17 @@ object SparkApp {
       .master("local[*]")
       .config("spark.sql.warehouse.dir", "file:///c:/tmp/spark-warehouse")
       .getOrCreate()
+
+    //imported csv
+    val googleUserReviews = spark.read.option("header", true).csv("googleplaystore_user_reviews.csv")
+    val googlePlayStore = spark.read.option("header", true).csv("googleplaystore.csv")
+
+    //Part 1
+    var df_1: DataFrame = googleUserReviews
+    df_1.printSchema()
+    df_1.show()
+
+    println("Quitting....")
+    spark.close()
   }
 }
