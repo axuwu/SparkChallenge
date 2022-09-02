@@ -25,28 +25,28 @@ object SparkApp {
     val googlePlayStore:DataFrame = spark.read.option("header", value = true).csv("googleplaystore.csv")
 
     println("--------------------------------------------------Part 1--------------------------------------------------")
-    var df_1: DataFrame = partOne(googleUserReviews)
+    var df_1:DataFrame = partOne(googleUserReviews)
 
     df_1.printSchema()
     df_1.show()
 
 
     println("--------------------------------------------------Part 2--------------------------------------------------")
-    var df_2 = partTwo(googlePlayStore, "§", "Ex2/", "best_apps.csv", spark)
+    var df_2:DataFrame = partTwo(googlePlayStore, "§", "Ex2/", "best_apps.csv", spark)
 
     df_2.printSchema()
     df_2.show()
 
 
     println("--------------------------------------------------Part 3--------------------------------------------------")
-    var df_3 = partThree(googlePlayStore)
+    var df_3:DataFrame = partThree(googlePlayStore)
 
     df_3.printSchema()
     df_3.show()
 
 
     println("--------------------------------------------------Part 4--------------------------------------------------")
-    var joinedDf_3_1 = partFour(df_3, df_1, "gzip", "Ex4/", "googleplaystore_cleaned.parquet", spark)
+    var joinedDf_3_1:DataFrame = partFour(df_3, df_1, "gzip", "Ex4/", "googleplaystore_cleaned.parquet", spark)
 
     joinedDf_3_1.printSchema()
     joinedDf_3_1.show()
@@ -63,7 +63,7 @@ object SparkApp {
   //Part 1
   def partOne(df:DataFrame): DataFrame = {
 
-    var df_1: DataFrame = df
+    var df_1:DataFrame = df
       .groupBy("App")//groups by App
       .agg(avg(df("Sentiment_Polarity")).as("Average_Sentiment_Polarity")) //does the average of Polarity
       .withColumn("Average_Sentiment_Polarity", col("Average_Sentiment_Polarity").cast(DoubleType)) //turns them as Double
@@ -85,6 +85,7 @@ object SparkApp {
 
     val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
 
+    //exists or doesnt exist
     val fileExists = fs.exists(new Path(pathToFile+fileName))
 
     return fileExists
@@ -103,8 +104,10 @@ object SparkApp {
     val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
 
     val file = fs.globStatus(new Path(pathToFile+ogName))(0).getPath().getName()
+
     //renames that file to best_apps.csv
     fs.rename(new Path(pathToFile + file), new Path(pathToFile + fileName))
+
     //delete temp file
     fs.delete(new Path(fileName+"-temp"), true)
   }
@@ -112,7 +115,7 @@ object SparkApp {
   //Part 2
   def partTwo(df:DataFrame, delim:String, pathToFile:String, fileName:String, spark:SparkSession): DataFrame = {
 
-    var df_2 = df
+    var df_2:DataFrame = df
       .withColumn("Rating", df("Rating").cast(DoubleType))
       .filter(df("Rating") >= 4.0 && !isnan(df("Rating")))
       .sort(desc("Rating"))
@@ -125,7 +128,7 @@ object SparkApp {
   //Part 3
   def partThree(df:DataFrame): DataFrame = {
 
-    var df_3 = df.sort(desc("Reviews"))
+    var df_3:DataFrame = df.sort(desc("Reviews"))
       .groupBy("App")
       .agg(
         collect_set("Category").as("Categories"),
@@ -179,7 +182,7 @@ object SparkApp {
   //Part 4
   def partFour(df_3:DataFrame, df_1:DataFrame, compressionMethod:String, pathToFile:String, fileName:String, spark:SparkSession): DataFrame = {
 
-    var joinedDf = df_3.join(df_1, Seq("App"))
+    var joinedDf:DataFrame = df_3.join(df_1, Seq("App"))
 
     writeFile(joinedDf, "parquet", compressionMethod, pathToFile, fileName, spark)
 
@@ -197,7 +200,7 @@ object SparkApp {
 
     val ogName:String = "part*"
 
-    val fileExists = doesFileExists(pathToFile, ogName, spark)
+    val fileExists:Boolean = doesFileExists(pathToFile, ogName, spark)
 
     if (!fileExists) {
       extension match {
@@ -208,4 +211,11 @@ object SparkApp {
     }
   }
 
+  //Part 5
+  def PartFive(df:DataFrame): DataFrame ={
+
+    var df_4:DataFrame = df
+
+    return df_4
+  }
 }
