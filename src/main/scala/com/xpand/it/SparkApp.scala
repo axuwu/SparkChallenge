@@ -1,6 +1,5 @@
 package com.xpand.it
 
-import java.io.File
 import org.apache.hadoop.fs._
 import org.apache.log4j._
 import org.apache.spark.sql
@@ -13,7 +12,7 @@ object SparkApp {
     println("Starting....")
 
     //disable logs
-    Logger.getLogger("org").setLevel((Level.ERROR));
+    Logger.getLogger("org").setLevel(Level.ERROR)
 
     //setup
     val spark = SparkSession.builder()
@@ -37,6 +36,18 @@ object SparkApp {
 
     df_2.printSchema()
     df_2.show()
+
+    println("--------------------------------------------------Part 3--------------------------------------------------")
+    var df_3 = partThree(googlePlayStore)
+
+    df_3.printSchema()
+    df_3.show()
+
+    println("--------------------------------------------------Part 4--------------------------------------------------")
+    var df_4 = partFour(df_3, df_1, "gzip", "Ex4/", "googleplaystore_cleaned.parquet", spark)
+
+    df_4.printSchema()
+    df_4.show()
 
 
     println("Quitting....")
@@ -123,4 +134,82 @@ object SparkApp {
     return df_2
   }
 
+  //Part 3
+  def partThree(df:DataFrame): DataFrame = {
+    var df_3 = df.sort(desc("Reviews"))
+      .groupBy("App")
+      .agg(
+        collect_set("Category").as("Categories"),
+        //first("Rating").cast(LongType).as("Rating"),
+        first("Rating").as("Rating"),
+        first("Reviews").cast(LongType).as("Reviews"),
+        first("Size").as("Size"),
+        first("Installs").as("Installs"),
+        first("Type").as("Type"),
+        first("Price").as("Price"),
+        first("Content Rating").as("Content_Rating"),
+        split(first("Genres"), ";").as("Genres"), //splits by ";"
+        first("Last Updated").as("Last_Updated"),
+        first("Current Ver").as("Current_Version"),
+        first("Android Ver").as("Minimum_Android_Version")
+      )
+      .na.fill(0, Seq("Reviews"))
+
+    //fixing rating
+    df_3 = df_3.withColumn("Rating", col("Rating").cast(DoubleType))
+    df_3 = df_3.withColumn("Rating", when(col("Rating").isNaN,lit(null))
+      .otherwise(col("Rating")))
+    //fixing reviews
+    df_3 = df_3.withColumn("Reviews", when(col("Reviews").isNull || col("Reviews").isNaN ,0L)
+      .otherwise(col("Reviews"))) //Valor por defeito = 0 -> Se existir NaN ou Null é retirado.
+
+    //fixing size
+    df_3 = df_3.withColumn("Size",
+      when(
+        col("size").endsWith("M"), split(col("Size"), "M").getItem(0)
+      )
+        .when(
+          col("Size").endsWith("K"), split(col("Size"), "k").getItem(0)./(scala.math.pow(10, 3))
+        )
+        .otherwise(null)
+    )
+    df_3 = df_3.withColumn("Size", col("Size").cast(DoubleType))
+    //price done
+    df_3 = df_3.withColumn("Price", regexp_replace(col("Price"), "$", ""))
+    df_3 = df_3.withColumn("Price", col("Price").cast(DoubleType))
+    df_3 = df_3.withColumn("Price", col("Price") * 0.9)
+    //fixing android ver
+    df_3 = df_3.withColumn("Minimum_Android_Version", regexp_replace(col("Minimum_Android_Version"), " and up", ""))
+
+    return df_3
+  }
+
+  /**
+   * writes a parquet
+   * @param df dataframe wanted to be exported as parquet
+   * @param compressionMethod compression
+   * @param pathToFile path of the file
+   */
+  def writeParquet(df: DataFrame, compressionMethod:String, pathToFile:String): Unit = {
+    df.coalesce(1).write
+      .option("compression", compressionMethod)
+      .parquet(pathToFile)
+  }
+
+  //Part 4
+  def partFour(df_3:DataFrame, df_1:DataFrame, compressionMethod:String,pathToFile:String, fileName:String, spark:SparkSession): DataFrame = {
+    var df_4 = df_3.join(df_1, Seq("App"))
+
+    val ogName:String = "part*"
+
+    val fileExists = doesFileExists(pathToFile, ogName, spark)
+
+    if (!fileExists){
+      writeParquet(df_4, compressionMethod, pathToFile)
+
+      renameWrittenFile(pathToFile, fileName, spark)
+    }
+
+    return df_4
+  }
 }
