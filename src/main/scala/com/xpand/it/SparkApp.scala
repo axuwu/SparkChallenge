@@ -2,7 +2,6 @@ package com.xpand.it
 
 import org.apache.hadoop.fs._
 import org.apache.log4j._
-import org.apache.spark.sql
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.functions._
@@ -22,8 +21,8 @@ object SparkApp {
       .getOrCreate()
 
     //imported csv
-    val googleUserReviews:DataFrame = spark.read.option("header", true).csv("googleplaystore_user_reviews.csv")
-    val googlePlayStore:DataFrame = spark.read.option("header", true).csv("googleplaystore.csv")
+    val googleUserReviews:DataFrame = spark.read.option("header", value = true).csv("googleplaystore_user_reviews.csv")
+    val googlePlayStore:DataFrame = spark.read.option("header", value = true).csv("googleplaystore.csv")
 
     println("--------------------------------------------------Part 1--------------------------------------------------")
     var df_1: DataFrame = partOne(googleUserReviews)
@@ -31,11 +30,13 @@ object SparkApp {
     df_1.printSchema()
     df_1.show()
 
+
     println("--------------------------------------------------Part 2--------------------------------------------------")
     var df_2 = partTwo(googlePlayStore, "§", "Ex2/", "best_apps.csv", spark)
 
     df_2.printSchema()
     df_2.show()
+
 
     println("--------------------------------------------------Part 3--------------------------------------------------")
     var df_3 = partThree(googlePlayStore)
@@ -43,11 +44,16 @@ object SparkApp {
     df_3.printSchema()
     df_3.show()
 
-    println("--------------------------------------------------Part 4--------------------------------------------------")
-    var df_4 = partFour(df_3, df_1, "gzip", "Ex4/", "googleplaystore_cleaned.parquet", spark)
 
-    df_4.printSchema()
-    df_4.show()
+    println("--------------------------------------------------Part 4--------------------------------------------------")
+    var joinedDf_3_1 = partFour(df_3, df_1, "gzip", "Ex4/", "googleplaystore_cleaned.parquet", spark)
+
+    joinedDf_3_1.printSchema()
+    joinedDf_3_1.show()
+
+
+    println("--------------------------------------------------Part 4--------------------------------------------------")
+    //TODO: var df_4 = partFive(df_3)
 
 
     println("Quitting....")
@@ -56,6 +62,7 @@ object SparkApp {
 
   //Part 1
   def partOne(df:DataFrame): DataFrame = {
+
     var df_1: DataFrame = df
       .groupBy("App")//groups by App
       .agg(avg(df("Sentiment_Polarity")).as("Average_Sentiment_Polarity")) //does the average of Polarity
@@ -69,34 +76,25 @@ object SparkApp {
    * To check if file exists
    * @param pathToFile path of the file
    * @param fileName file's name
-   * @param spark
+   * @param spark spark
    * @return a Boolean:
    * -> true - if file exists
    * -> false - if file doesn't exist
    */
   def doesFileExists(pathToFile:String, fileName:String, spark:SparkSession): Boolean = {
-    val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
-    val fileExists = fs.exists(new Path(pathToFile+fileName))
-    return fileExists
-  }
 
-  /**
-   * writes a csv
-   * @param df dataframe wanted to be exported as csv
-   * @param delim delimiter
-   * @param pathToFile path of the file
-   */
-  def writeCSV(df: DataFrame, delim:String, pathToFile:String): Unit = {
-    df.coalesce(1).write
-      .option("delimiter", delim)
-      .csv(pathToFile)
+    val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
+
+    val fileExists = fs.exists(new Path(pathToFile+fileName))
+
+    return fileExists
   }
 
   /**
    * renames a file
    * @param pathToFile path of the file
    * @param fileName wanted name to be written
-   * @param spark
+   * @param spark spark
    */
   def renameWrittenFile(pathToFile:String, fileName:String, spark:SparkSession): Unit = {
 
@@ -114,28 +112,19 @@ object SparkApp {
   //Part 2
   def partTwo(df:DataFrame, delim:String, pathToFile:String, fileName:String, spark:SparkSession): DataFrame = {
 
-    val ogName:String = "part*"
-
     var df_2 = df
       .withColumn("Rating", df("Rating").cast(DoubleType))
       .filter(df("Rating") >= 4.0 && !isnan(df("Rating")))
       .sort(desc("Rating"))
 
-    //check if file exists
-    val fileExists = doesFileExists(pathToFile, ogName, spark)
-
-    if (!fileExists) {
-      //writes the csv
-      writeCSV(df_2, delim, pathToFile)
-      //renames the csv
-      renameWrittenFile(pathToFile, fileName, spark)
-    }
+    writeFile(df_2, "csv", delim, pathToFile, fileName, spark)
 
     return df_2
   }
 
   //Part 3
   def partThree(df:DataFrame): DataFrame = {
+
     var df_3 = df.sort(desc("Reviews"))
       .groupBy("App")
       .agg(
@@ -155,15 +144,16 @@ object SparkApp {
       )
       .na.fill(0, Seq("Reviews"))
 
-    //fixing rating
+    //making it double type
     df_3 = df_3.withColumn("Rating", col("Rating").cast(DoubleType))
     df_3 = df_3.withColumn("Rating", when(col("Rating").isNaN,lit(null))
       .otherwise(col("Rating")))
-    //fixing reviews
+
+    //make them as zero of long type
     df_3 = df_3.withColumn("Reviews", when(col("Reviews").isNull || col("Reviews").isNaN ,0L)
       .otherwise(col("Reviews"))) //Valor por defeito = 0 -> Se existir NaN ou Null é retirado.
 
-    //fixing size
+    //check if is Mb or Kb and making according transformation (remove the letters M and K)
     df_3 = df_3.withColumn("Size",
       when(
         col("size").endsWith("M"), split(col("Size"), "M").getItem(0)
@@ -174,42 +164,48 @@ object SparkApp {
         .otherwise(null)
     )
     df_3 = df_3.withColumn("Size", col("Size").cast(DoubleType))
-    //price done
+
+    //remove the dollar symbol, make value as double type and change to *0.9
     df_3 = df_3.withColumn("Price", regexp_replace(col("Price"), "$", ""))
     df_3 = df_3.withColumn("Price", col("Price").cast(DoubleType))
     df_3 = df_3.withColumn("Price", col("Price") * 0.9)
-    //fixing android ver
+
+    //remove the "and up"
     df_3 = df_3.withColumn("Minimum_Android_Version", regexp_replace(col("Minimum_Android_Version"), " and up", ""))
 
     return df_3
   }
 
-  /**
-   * writes a parquet
-   * @param df dataframe wanted to be exported as parquet
-   * @param compressionMethod compression
-   * @param pathToFile path of the file
-   */
-  def writeParquet(df: DataFrame, compressionMethod:String, pathToFile:String): Unit = {
-    df.coalesce(1).write
-      .option("compression", compressionMethod)
-      .parquet(pathToFile)
+  //Part 4
+  def partFour(df_3:DataFrame, df_1:DataFrame, compressionMethod:String, pathToFile:String, fileName:String, spark:SparkSession): DataFrame = {
+
+    var joinedDf = df_3.join(df_1, Seq("App"))
+
+    writeFile(joinedDf, "parquet", compressionMethod, pathToFile, fileName, spark)
+
+    return joinedDf
   }
 
-  //Part 4
-  def partFour(df_3:DataFrame, df_1:DataFrame, compressionMethod:String,pathToFile:String, fileName:String, spark:SparkSession): DataFrame = {
-    var df_4 = df_3.join(df_1, Seq("App"))
+  /**
+   * writes a file
+   * @param df dataframe
+   * @param extension the extension of the file
+   * @param typeOfOperation type of option like delimiter or compression
+   * @param pathToFile path of the file
+   */
+  def writeFile(df: DataFrame, extension:String, typeOfOperation:String, pathToFile:String, fileName:String, spark:SparkSession): Unit = {
 
     val ogName:String = "part*"
 
     val fileExists = doesFileExists(pathToFile, ogName, spark)
 
-    if (!fileExists){
-      writeParquet(df_4, compressionMethod, pathToFile)
-
+    if (!fileExists) {
+      extension match {
+        case "csv" => df.coalesce(1).write.option("delimiter", typeOfOperation).csv(pathToFile)
+        case "parquet" => df.coalesce(1).write.option("compression", typeOfOperation).parquet(pathToFile)
+      }
       renameWrittenFile(pathToFile, fileName, spark)
     }
-
-    return df_4
   }
+
 }
