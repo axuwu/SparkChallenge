@@ -51,9 +51,11 @@ object SparkApp {
     joinedDf_3_1.printSchema()
     joinedDf_3_1.show()
 
+    println("--------------------------------------------------Part 5--------------------------------------------------")
+    var df_4 = partFive(joinedDf_3_1, "gzip", "Ex5/", "googleplaystore_metrics.parquet", spark)
 
-    println("--------------------------------------------------Part 4--------------------------------------------------")
-    //TODO: var df_4 = partFive(df_3)
+    df_4.printSchema()
+    df_4.show()
 
 
     println("Quitting....")
@@ -85,7 +87,7 @@ object SparkApp {
 
     val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
 
-    //exists or doesnt exist
+    //exists (true) or doesnt exist (false)
     val fileExists = fs.exists(new Path(pathToFile+fileName))
 
     return fileExists
@@ -112,6 +114,28 @@ object SparkApp {
     fs.delete(new Path(fileName+"-temp"), true)
   }
 
+  /**
+   * writes a file
+   * @param df dataframe
+   * @param extension the extension of the file
+   * @param typeOfOperation type of option like delimiter or compression
+   * @param pathToFile path of the file
+   */
+  def writeFile(df: DataFrame, extension:String, typeOfOperation:String, pathToFile:String, fileName:String, spark:SparkSession): Unit = {
+
+    val ogName:String = "part*"
+
+    val fileExists:Boolean = doesFileExists(pathToFile, ogName, spark)
+
+    if (!fileExists) {
+      extension match {
+        case "csv" => df.coalesce(1).write.option("delimiter", typeOfOperation).csv(pathToFile)
+        case "parquet" => df.coalesce(1).write.option("compression", typeOfOperation).parquet(pathToFile)
+      }
+      renameWrittenFile(pathToFile, fileName, spark)
+    }
+  }
+
   //Part 2
   def partTwo(df:DataFrame, delim:String, pathToFile:String, fileName:String, spark:SparkSession): DataFrame = {
 
@@ -132,7 +156,6 @@ object SparkApp {
       .groupBy("App")
       .agg(
         collect_set("Category").as("Categories"),
-        //first("Rating").cast(LongType).as("Rating"),
         first("Rating").as("Rating"),
         first("Reviews").cast(LongType).as("Reviews"),
         first("Size").as("Size"),
@@ -184,38 +207,29 @@ object SparkApp {
 
     var joinedDf:DataFrame = df_3.join(df_1, Seq("App"))
 
+    //writes the .parquet
     writeFile(joinedDf, "parquet", compressionMethod, pathToFile, fileName, spark)
 
     return joinedDf
   }
 
-  /**
-   * writes a file
-   * @param df dataframe
-   * @param extension the extension of the file
-   * @param typeOfOperation type of option like delimiter or compression
-   * @param pathToFile path of the file
-   */
-  def writeFile(df: DataFrame, extension:String, typeOfOperation:String, pathToFile:String, fileName:String, spark:SparkSession): Unit = {
+  //Part 5
+  def partFive(df:DataFrame, compressionMethod:String, pathToFile:String, fileName:String, spark:SparkSession): DataFrame ={
 
     val ogName:String = "part*"
 
-    val fileExists:Boolean = doesFileExists(pathToFile, ogName, spark)
+    var df_4:DataFrame = df.select(explode(col("Genres")).as("Genre"), col("App"), col("Rating"), col("Average_Sentiment_Polarity"))
+      .groupBy("Genre") //groups by genre
+      .agg(
+        count(lit(1)).as("Count"), //counts
+        avg("Rating").as("Average_Rating"), //does average of ratings
+        avg("Average_Sentiment_Polarity").as("Average_Sentiment_Polarity") //does average of polarities
+      )
 
-    if (!fileExists) {
-      extension match {
-        case "csv" => df.coalesce(1).write.option("delimiter", typeOfOperation).csv(pathToFile)
-        case "parquet" => df.coalesce(1).write.option("compression", typeOfOperation).parquet(pathToFile)
-      }
-      renameWrittenFile(pathToFile, fileName, spark)
-    }
-  }
-
-  //Part 5
-  def PartFive(df:DataFrame): DataFrame ={
-
-    var df_4:DataFrame = df
+    //writes the .parquet
+    writeFile(df_4, "parquet", compressionMethod, pathToFile, fileName, spark)
 
     return df_4
   }
+
 }
