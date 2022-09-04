@@ -216,8 +216,6 @@ object SparkApp {
   //Part 5
   def partFive(df:DataFrame, compressionMethod:String, pathToFile:String, fileName:String, spark:SparkSession): DataFrame ={
 
-    val ogName:String = "part*"
-
     var df_4:DataFrame = df.select(explode(col("Genres")).as("Genre"), col("App"), col("Rating"), col("Average_Sentiment_Polarity"))
       .groupBy("Genre") //groups by genre
       .agg(
